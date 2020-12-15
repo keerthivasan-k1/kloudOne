@@ -1,199 +1,191 @@
+// AVL Tree in Golang
 package main
+ 
+import (
+    "encoding/json"
+    "fmt"
+)
 
-import "fmt"
+type Key interface {
+    Less(Key) bool
+    Eq(Key) bool
+}
+ 
 
 type Node struct {
-	value int
-	left  *Node
-	right *Node
+    Data    Key
+    Balance int
+    Link    [2]*Node
+}
+ 
+
+func opp(dir int) int {
+    return 1 - dir
+}
+ 
+// single rotation
+func single(root *Node, dir int) *Node {
+    save := root.Link[opp(dir)]
+    root.Link[opp(dir)] = save.Link[dir]
+    save.Link[dir] = root
+    return save
+}
+ 
+// double rotation
+func double(root *Node, dir int) *Node {
+    save := root.Link[opp(dir)].Link[dir]
+ 
+    root.Link[opp(dir)].Link[dir] = save.Link[opp(dir)]
+    save.Link[opp(dir)] = root.Link[opp(dir)]
+    root.Link[opp(dir)] = save
+ 
+    save = root.Link[opp(dir)]
+    root.Link[opp(dir)] = save.Link[dir]
+    save.Link[dir] = root
+    return save
+}
+ 
+// adjust valance factors after double rotation
+func adjustBalance(root *Node, dir, bal int) {
+    n := root.Link[dir]
+    nn := n.Link[opp(dir)]
+    switch nn.Balance {
+    case 0:
+        root.Balance = 0
+        n.Balance = 0
+    case bal:
+        root.Balance = -bal
+        n.Balance = 0
+    default:
+        root.Balance = 0
+        n.Balance = bal
+    }
+    nn.Balance = 0
+}
+ 
+func insertBalance(root *Node, dir int) *Node {
+    n := root.Link[dir]
+    bal := 2*dir - 1
+    if n.Balance == bal {
+        root.Balance = 0
+        n.Balance = 0
+        return single(root, opp(dir))
+    }
+    adjustBalance(root, dir, bal)
+    return double(root, opp(dir))
+}
+ 
+func insertR(root *Node, data Key) (*Node, bool) {
+    if root == nil {
+        return &Node{Data: data}, false
+    }
+    dir := 0
+    if root.Data.Less(data) {
+        dir = 1
+    }
+    var done bool
+    root.Link[dir], done = insertR(root.Link[dir], data)
+    if done {
+        return root, true
+    }
+    root.Balance += 2*dir - 1
+    switch root.Balance {
+    case 0:
+        return root, true
+    case 1, -1:
+        return root, false
+    }
+    return insertBalance(root, dir), true
+}
+ 
+// Insert a node into the AVL tree.
+func Insert(tree **Node, data Key) {
+    *tree, _ = insertR(*tree, data)
 }
 
-type AVL struct {
-	root *Node
+// Remove a single item from an AVL tree.
+func Remove(tree **Node, data Key) {
+    *tree, _ = removeR(*tree, data)
 }
 
-func (avl *AVL) Insert(value int) {
-	if avl.root == nil {
-		avl.root = &Node{
-			value: value,
-		}
-	} else {
-		avl.root = avl.root.Insert(value)
-		avl.root = avl.root.Balance()
-	}
+func removeBalance(root *Node, dir int) (*Node, bool) {
+    n := root.Link[opp(dir)]
+    bal := 2*dir - 1
+    switch n.Balance {
+    case -bal:
+        root.Balance = 0
+        n.Balance = 0
+        return single(root, dir), false
+    case bal:
+        adjustBalance(root, opp(dir), -bal)
+        return double(root, dir), false
+    }
+    root.Balance = -bal
+    n.Balance = bal
+    return single(root, dir), true
 }
-
-/*
-Successor returns successor node and parent of successor as:
-Case 1:returns nil, nil if callee has no right child
-Case 2:returns node.right, node if successor is right node
-Case 3:returns successorNode, successorParent if successor is right node's child
-*/
-func (node *Node) Successor() (successor, parent *Node) {
-	parent = node
-	successor = node.right
-	for successor != nil && successor.left != nil {
-		if successor.left == nil {
-			break
-		}
-		parent = successor
-		successor = successor.left
-	}
-	return successor, parent
+ 
+func removeR(root *Node, data Key) (*Node, bool) {
+    if root == nil {
+        return nil, false
+    }
+    if root.Data.Eq(data) {
+        switch {
+        case root.Link[0] == nil:
+            return root.Link[1], false
+        case root.Link[1] == nil:
+            return root.Link[0], false
+        }
+        heir := root.Link[0]
+        for heir.Link[1] != nil {
+            heir = heir.Link[1]
+        }
+        root.Data = heir.Data
+        data = heir.Data
+    }
+    dir := 0
+    if root.Data.Less(data) {
+        dir = 1
+    }
+    var done bool
+    root.Link[dir], done = removeR(root.Link[dir], data)
+    if done {
+        return root, true
+    }
+    root.Balance += 1 - 2*dir
+    switch root.Balance {
+    case 1, -1:
+        return root, true
+    case 0:
+        return root, false
+    }
+    return removeBalance(root, dir)
 }
+ 
 
-/*
-Remove of *AVL handle head removal cases, or calls Remove of *Node
-Case 1: right node is successor
-Case 2: right's child node is successor
-Case 3: left node is successor
-*/
-func (avl *AVL) Remove(value int) {
-	if avl.root.value == value {
-		replacer, replacerParent := avl.root.Successor()
-		if replacer != nil {
-			replacer.left = avl.root.left
-			if replacerParent != avl.root {
-				replacerParent.left = replacer.right
-				replacer.right = avl.root.right
-			}
-			avl.root = replacer
-			avl.root = avl.root.Balance()
-		} else {
-			avl.root = avl.root.left
-		}
-	} else {
-		avl.root = avl.root.Remove(value, nil)
-	}
-}
-
-/*
-Remove of *Node handle cases with non-head node removal
-Case 1: having only right node
-Case 2: having successor other than right node with no child
-Case 3: having successor with right child
-*/
-func (node *Node) Remove(value int, parentNode *Node) *Node {
-	if node.value == value {
-		if node.right == nil {
-			if parentNode.value > node.value {
-				parentNode.left = nil
-			} else {
-				parentNode.right = nil
-			}
-		} else {
-			replacer, replacerParent := node.Successor()
-			replacer.left = node.left
-			if replacerParent != node {
-				replacer.right = node.right
-				replacerParent.left = replacer.right
-			}
-			if parentNode.value > node.value {
-				parentNode.left = replacer
-			} else {
-				parentNode.right = replacer
-			}
-		}
-	} else if node.value < value {
-		parentNode = node
-		_ = node.right.Remove(value, node)
-		parentNode = parentNode.Balance()
-	} else {
-		parentNode = node
-		_ = node.left.Remove(value, node)
-		parentNode = parentNode.Balance()
-	}
-	return parentNode
-}
-
-func (avl *AVL) Traverse() []int {
-	return avl.root.Traverse()
-}
-
-// Traverse returns []int with Pre-Order traversal
-func (node *Node) Traverse() (nodes []int) {
-	if node == nil {
-		return
-	}
-	nodes = append(nodes, node.value)
-	nodes = append(nodes, node.left.Traverse()...)
-	nodes = append(nodes, node.right.Traverse()...)
-	return nodes
-}
-
-// Balance returns the rearrange node with maximum depth difference of 1 for callee
-func (node *Node) Balance() *Node {
-	height := node.left.Height() - node.right.Height()
-	if height < -1 {
-		// left rotation required
-		diff := node.right.left.Height() - node.right.right.Height()
-		if diff > 0 {
-			node.right = node.right.RightRotate()
-		}
-		node = node.LeftRotate()
-	}
-	if height > 1 {
-		// right rotation required
-		diff := node.left.left.Height() - node.left.right.Height()
-		if diff < 0 {
-			node.left = node.left.LeftRotate()
-		}
-		node = node.RightRotate()
-	}
-	return node
-}
-
-// Height returns the maximum depth of callee node
-func (node *Node) Height() int {
-	var leftHeight, rightHeight int
-	if node == nil {
-		return 0
-	}
-	leftHeight = node.left.Height()
-	rightHeight = node.right.Height()
-	if leftHeight > rightHeight {
-		return leftHeight + 1
-	}
-	return rightHeight + 1
-}
-
-func (node *Node) LeftRotate() *Node {
-	node.right, node.right.left, node = node.right.left, node, node.right
-	return node
-}
-
-func (node *Node) RightRotate() *Node {
-	node.left, node.left.right, node = node.left.right, node, node.left
-	return node
-}
-
-func (node *Node) Insert(value int) *Node {
-	if value < node.value {
-		if node.left != nil {
-			node.left = node.left.Insert(value)
-			node = node.Balance()
-		} else {
-			node.left = &Node{
-				value: value,
-			}
-		}
-	} else {
-		if node.right != nil {
-			node.right = node.right.Insert(value)
-			node = node.Balance()
-		} else {
-			node.right = &Node{
-				value: value,
-			}
-		}
-	}
-	return node
-}
-
+type intKey int 
+func (k intKey) Less(k2 Key) bool { return k < k2.(intKey) }
+func (k intKey) Eq(k2 Key) bool   { return k == k2.(intKey) }
+ 
 func main() {
-	my := AVL{}
-	node1 := &Node{value: 23}
-	my.Insert(node1)
-	fmt.Println(my)
+    var tree *Node
+    fmt.Println("Empty Tree:")    
+	avl,_ := json.MarshalIndent(tree, "", "   ")
+	fmt.Println(string(avl))
 
+    fmt.Println("\nInsert Tree:")
+    Insert(&tree, intKey(4))
+    Insert(&tree, intKey(2))
+    Insert(&tree, intKey(7))
+    Insert(&tree, intKey(6))
+	Insert(&tree, intKey(6))
+    Insert(&tree, intKey(9))
+    avl,_ = json.MarshalIndent(tree, "", "   ")
+	fmt.Println(string(avl))
+ 
+    fmt.Println("\nRemove Tree:")
+    Remove(&tree, intKey(4))
+    Remove(&tree, intKey(6))
+    avl,_ = json.MarshalIndent(tree, "", "   ")
+	fmt.Println(string(avl))
 }
