@@ -17,7 +17,7 @@ type UpdateProductInput struct {
 	Price string `json:"price"`
 }
 
-// GET /books
+// GET /products
 // Find all books
 func FindProducts(c *gin.Context) {
 	var products []model.Product
@@ -26,8 +26,8 @@ func FindProducts(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"data": products})
 }
 
-// GET /books/:id
-// Find a book
+// GET /products/:id
+// Find a product
 func FindProduct(c *gin.Context) {
 	// Get model if exist
 	var product model.Product
@@ -39,8 +39,8 @@ func FindProduct(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"data": product})
 }
 
-// POST /books
-// Create new book
+// POST /products
+// Create new product
 func CreateProduct(c *gin.Context) {
 	// Validate input
 	var input CreateProductInput
@@ -49,15 +49,15 @@ func CreateProduct(c *gin.Context) {
 		return
 	}
 
-	// Create book
+	// Create product
 	product := model.Product{Name: input.Name, Price: input.Price}
 	model.DB.Create(&product)
 
 	c.JSON(http.StatusOK, gin.H{"data": product})
 }
 
-// PATCH /books/:id
-// Update a book
+// PATCH /products/:id
+// Update a product
 func UpdateProduct(c *gin.Context) {
 	// Get model if exist
 	var product model.Product
@@ -78,8 +78,8 @@ func UpdateProduct(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"data": product})
 }
 
-// DELETE /books/:id
-// Delete a book
+// DELETE /products/:id
+// Delete a products
 func DeleteProduct(c *gin.Context) {
 	// Get model if exist
 	var product model.Product
